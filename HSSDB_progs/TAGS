@@ -1,0 +1,132 @@
+
+Bin_TTE.c,21
+void Bin_TTE 30,896
+
+ByteSwap.c,59
+uint16_t  ByteSwap_2 23,689
+uint32_t  ByteSwap_4 42,1009
+
+Extract_TTE_1packet.ALLOW_ERRs.c,439
+#define  BUFFER_DEPTH 81,2920
+#define  POST_ANOMALY_OUTPUT 82,2947
+#define  LINE_LENGTH 84,2982
+typedef struct  BufferEntry_type 86,3011
+   char Line 88,3047
+   _Bool  EntryUsed;89,3075
+}  BufferEntry_type;91,3097
+static  BufferEntry_type  TTE_Buffer 101,3467
+static  uint32_t  BufferPosition 103,3521
+void Extract_TTE_1packet 118,3823
+void  Insert_into_Buffer 684,29522
+void  DumpBuffer 733,30719
+void  BufferErase 787,31788
+
+Extract_TTE_1packet.c,439
+#define  BUFFER_DEPTH 81,2920
+#define  POST_ANOMALY_OUTPUT 82,2947
+#define  LINE_LENGTH 84,2982
+typedef struct  BufferEntry_type 86,3011
+   char Line 88,3047
+   _Bool  EntryUsed;89,3075
+}  BufferEntry_type;91,3097
+static  BufferEntry_type  TTE_Buffer 101,3467
+static  uint32_t  BufferPosition 103,3521
+void Extract_TTE_1packet 118,3823
+void  Insert_into_Buffer 638,27454
+void  DumpBuffer 687,28651
+void  BufferErase 741,29720
+
+FloatTime_from_CoarseFine.c,47
+long double FloatTime_from_CoarseFine 29,1093
+
+GBM_MET_Time_to_JulianDay.c,81
+#define  JD_OF_GLAST_EPOCH 15,428
+long double GBM_MET_Time_to_JulianDay 20,534
+
+GBM_UnifiedTime_from_TTE_Data.c,61
+long long unsigned int GBM_UnifiedTime_from_TTE_Data 21,511
+
+GBM_UnifiedTime_to_JulianDay.c,84
+#define  JD_OF_GLAST_EPOCH 15,428
+long double GBM_UnifiedTime_to_JulianDay 20,534
+
+IntegerTime_from_CoarseFine.c,46
+uint64_t IntegerTime_from_CoarseFine 38,1635
+
+JulianDay_to_Calendar_subr.c,41
+void JulianDay_to_Calendar_subr 35,1007
+
+Main_Convert_UnifiedTime.c,17
+int main 12,254
+
+MAIN_Extract_TTE.c,18
+int main 35,1115
+
+MAIN_FileScan.c,18
+int main 55,2450
+
+MAIN_Merge_TTE.c,349
+typedef struct  Detector_Buffer_type 19,387
+   _Bool  HaveData;20,426
+   uint16_t  SpecChan;21,446
+   uint64_t  Time_in_OneVariable;22,469
+   uint32_t CoarseTime;23,503
+   uint16_t FineTime;24,527
+} Detector_Buffer_type;25,549
+int main 60,1120
+void ReadSummaryFile 202,5746
+void  SkipLines_v2 314,9478
+void Load_Detector_Buffer 345,10194
+
+Output_TTE.c,25
+void Output_TTE 36,1154
+
+ProcessCSPEC.c,26
+void ProcessCSPEC 16,305
+
+ProcessCTIME.c,26
+void ProcessCTIME 16,305
+
+ProcessTTE.c,25
+void ProcessTTE 70,2835
+
+ReadPacket.c,30
+uint32_t  ReadPacket 37,1395
+
+Read_Processed_C.c,16
+int main 8,118
+
+Read_TTE_1det_C.c,16
+int main 8,118
+
+ReSync.c,188
+   DATAORIGIN_UNDEFINED,63,2773
+   DATAORIGIN_I_AND_T,64,2798
+   DATAORIGIN_LEVEL065,2821
+} Data_Origin_type;67,2843
+_Bool  ReSync 72,2867
+static  _Bool  ReSync_FileReadBAD 275,9049
+
+Time_from_TTE_Data.c,40
+long double  Time_from_TTE_Data 15,394
+
+Trigger_from_TTE.c,680
+#define  ONE_SEC_IN_TICKS 19,397
+#define  BCKG_BUFFER_DEPTH 20,473
+#define  ONE_SEC 23,508
+#define  MAX_ALLOWED_BCKG_AGE 25,573
+#define  MIN_ALLOWED_BCKG_GAP 27,661
+#define  MIN_REQ_GOOD_BCKG_BINS 29,742
+typedef  struct  Background_Accum_type 33,795
+   _Bool  HaveData;34,836
+   uint32_t SummedCounts 35,856
+   uint32_t  BinNum;36,896
+   uint64_t  FirstDataTime;37,917
+   uint64_t  LastDataTime;38,945
+} Background_Accum_type;39,972
+uint64_t  BaseTime 44,1024
+uint64_t  Trigger_Timescale_in_Ticks;46,1058
+int main 64,1318
+uint64_t  LeftTimeBoundary_Bckg_Bin 450,18193
+uint64_t  RightTimeBoundary_Bckg_Bin 461,18470
+uint64_t  LeftTimeBoundary_Data_Bin 474,18767

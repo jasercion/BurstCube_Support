@@ -1,0 +1,9 @@
+
+
+Analyzing File GLAST_2008289_053900_GTIME.dat
+
+
+Will output all TTE Data Words, except those preceeding the first Time Word
+
+  Packet     Count   Coarse       Coarse    Fine           Time       Det  Chan
+ Sequence            Raw MET        MET      MET            (s)

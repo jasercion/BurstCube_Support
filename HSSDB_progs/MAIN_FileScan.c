@@ -1,0 +1,326 @@
+
+//  Revised by Michael S. Briggs, University of Alabama in Huntsville,
+//  copyright 2014 February 15.
+//  Revised to used C99 fixed-width integer types to enhance portability;
+//  also _Bool type.
+
+
+//  Michael S. Briggs, 2004 Oct 8, UAH / NSSTC.
+//  Revised 2007 September 18.
+
+//   The filename should be input on the command line:
+//   FileScan filename
+//   For example:
+//   ./FileScan  HSDAQ_BBE3D5A330A.dat
+
+//   Michael S. Briggs, 2003 Sept 23, 24 & 26 & 30, Oct 7.
+//   MSB, 2003 Oct 13 & 14: add deducing times from words inside of TTE packets.
+//   MSB, 2003 Oct 15: report CTIME data by chan for detector 0.
+//   MSB, 2003 Nov 18: it now resynchs after each packet so that excess bytes
+//      between a packet end and the next synch word are tolerated -- a warning
+//      message is output.
+//   MSB, 2003 Nov 26: a) the resynch subroutine reports whether or not the excess
+//      bytes are all zero,
+//      b) the code to identify the time range of the data words within a TTE packet
+//         has been revised and accounts for more cases.   b1) if a TTE packet lacks
+//         a Time Word, the last Time Word from a previous packet is used,
+//         b2) The cases that a packet has multiple time words before its first data word,
+//         or multiple time words after its last data word, are handled.
+//      c) It reports the sum of the counts (skipping noise channels) for all 14 detectors
+//         for all three data types.
+//   MSB, 2003 Dec 4: It now outputs to two files.  One has the summary, the other the times
+//      of all TTE data words.
+
+//   Simple program to scan through a GBM HSSDB telemetry file, reading
+//   the primary headers to obtain the APIDs and packet lengths, then
+//   using the packet lengths to read the application data and thus
+//   be ready to read the next packet.
+//   It also reports the packet lengths, ASSUMING NO GAPS between packets,
+//   and for CSPEC and CTIME, the number of counts of channels 1 to 7.
+//   It also sums the counts in the CSPEC and CTIME for all detectors,
+//   omitting the counts in noise channels.
+
+//   It would be easier to analyze TTE data after merging packets together (but one would have
+//   to recognize boundaries between chunks, e.g., prompt and FIFO), but the purpose of this
+//   program is to analyze the content of PACKETS.
+
+
+
+#include "HSSDB_Progs_Header.h"
+
+
+//   ***   ***   ***   ***   ***   ***   ***   ***   ***   ***   ***   ***   ***
+
+
+int main (int argc, char * argv [] ) {
+
+   FILE * ptr_to_InputFile;
+   FILE * ptr_to_SummaryFile;
+   FILE * ptr_to_TTE_File;
+
+   size_t  FileName_Length;
+   char * Input_FileName_ptr;
+   char * Summary_FileName_ptr;
+   char * TTE_FileName_ptr;
+
+
+   _Bool SyncWordFound;
+   uint32_t ExcessNonZeroCnt;
+   uint32_t ExcessBytes;
+
+   uint32_t ReadStatus;
+
+
+   DataType_type DataType;
+
+
+   uint16_t PacketData [ MAX_PACKET_ARRAY_BYTES / 2 ];
+
+   uint16_t PacketDataLength;
+
+   uint32_t HeaderCoarseTime;
+   uint16_t HeaderFineTime;
+
+   uint16_t SequenceCount;
+
+
+   //  This array is indexed by the enum type DataType_type:
+
+   uint32_t CountByAPID [4] = { 0, 0, 0, 0 };
+
+
+
+   // ********************************************************************************************
+
+
+   // *************************************************************
+   //      Setup, get user input, open files .....
+   // *************************************************************
+
+
+   //Validate number of args
+   if ( argc != 2 ) {
+      printf ( "Bad number of command line arguments: %d\n", argc - 1 );
+      printf ( "Example usage:  ./FileScan  HSDAQ_BBE3D5A330A.dat\n" );
+      printf ( "The command-line argument is the name of the file to analyze,\n" );
+      return 1;
+   }
+
+
+   //Check length of filename
+   FileName_Length = strlen ( argv [1] );
+   //Allocate memory for input filename (size=input filename length)
+   //Return pointer to allocated memory
+   Input_FileName_ptr   = malloc ( FileName_Length );
+   //Allocate memory for output summary filename (size=input filename length)
+   //Return pointer to allocated memory  
+   Summary_FileName_ptr = malloc ( FileName_Length );
+   //Allocate memory for output TTE filename (size=input filename length)
+   //Return pointer to allocated memory  
+   TTE_FileName_ptr     = malloc ( FileName_Length );
+
+   //Validate successful memory allocation
+   if ( Input_FileName_ptr == NULL  ||  Summary_FileName_ptr == NULL  ||  TTE_FileName_ptr == NULL ) {
+      printf ("\nmalloc call failed.\n");
+      return 2;
+   }
+
+   //Copy contents of argv[1] (input filename) to Input_FileName_ptr
+   //upto size FileName_Length
+   memcpy ( Input_FileName_ptr,   argv [1], FileName_Length );
+   //Copy contents of argv[1] (input filename) to Summary_FileName_ptr
+   //upto size FileName_Length
+   memcpy ( Summary_FileName_ptr, argv [1], FileName_Length );
+   //Copy contents of argv[1] (input filename) to TTE_FileName_ptr
+   //upto size FileName_Length
+   memcpy ( TTE_FileName_ptr,     argv [1], FileName_Length );
+
+   //Validate that the input filename has '.dat' as the last 4 chars
+   if ( strcmp ( Input_FileName_ptr + FileName_Length - 4, ".dat" )  != 0  ) {
+      printf ( "\nError: the filetype must be .dat !\n" );
+      return 3;
+   }
+
+   //Copy ".inf" into the Summary_FileName_ptr less the last 4 chars
+   strncpy ( Summary_FileName_ptr + FileName_Length - 4, ".inf", 4 );
+   //Copy ".tte" into the TTE_FileName_ptr less the last 4 chars
+   strncpy ( TTE_FileName_ptr     + FileName_Length - 4, ".tte", 4 );
+
+   //Open the InputFile (via ptr) in 'read binary' mode and return pointer to
+   //the opened file
+   ptr_to_InputFile =   fopen ( Input_FileName_ptr, "rb");
+   //Open the SummaryFile (via ptr) in 'write' mode and return pointer to
+   //the opened file      
+   ptr_to_SummaryFile = fopen ( Summary_FileName_ptr, "w");
+   //Open the TTEFile (via ptr) in 'write' mode and return pointer to
+   //the opened file
+   ptr_to_TTE_File =    fopen ( TTE_FileName_ptr,     "w");
+ 
+   //Validate the InputFile opened properly
+   if ( ptr_to_InputFile == NULL ) {
+      printf ( "Failed to open the Input file !\n" );
+      return 4;
+   }
+
+   //Validate that the SummaryFile and the TTEFile both opened properly
+   if ( ptr_to_SummaryFile == NULL  ||  ptr_to_TTE_File  ==  NULL ) {
+      printf ( "Failed to open one of the Output files !\n" );
+      return 5;
+   }
+
+
+   //Print out information strings to the output files
+   fprintf ( ptr_to_SummaryFile, "\n\nAnalyzing File %s\n\n", Input_FileName_ptr );
+   fprintf ( ptr_to_TTE_File,    "\n\nAnalyzing File %s\n\n", Input_FileName_ptr );
+
+    printf (                     "\n\nWill output Summary to file %s\n\n", Summary_FileName_ptr );
+   fprintf ( ptr_to_SummaryFile, "\n\nWill output Summary to file %s\n\n", Summary_FileName_ptr );
+
+    printf (                     "\n\nWill output TTE Times to file %s\n\n", TTE_FileName_ptr );
+   fprintf ( ptr_to_SummaryFile, "\n\nWill output TTE Times to file %s\n\n", TTE_FileName_ptr );
+
+   fprintf ( ptr_to_SummaryFile,
+      "\n\n WARNING: The Deduced accumulation lengths are obtained\n"
+      "by differencing he current packet with the time of the previous packet of the\n"
+      "same APID.  If there was a gap between packets of this APID, the accumulation\n"
+      "length will be wrong !!\n\n" );
+
+   fprintf ( ptr_to_SummaryFile,
+      "\n\n WARNING: The deductions of the time range of the data words in TTE packets\n"
+      "is based on some assumptions (see comments).  There may be rare cases in which\n"
+      "the deductions are wrong.   WARNING: the code is a bit complicated and not yet\n"
+      "thoroughly tested !!\n\n" );
+
+
+   fprintf ( ptr_to_TTE_File, "\nWill output all TTE Data Words, except those preceeding the first Time Word\n" );
+
+   fprintf ( ptr_to_TTE_File, "\n  Packet     Count   Coarse       Coarse    Fine           Time       Det  Chan\n"
+                                " Sequence            Raw MET        MET      MET            (s)\n" );
+
+
+   // *************************************************************
+   //        read and process the data
+   // *************************************************************
+
+
+
+   SyncWordFound = true;
+
+   while ( SyncWordFound ) {
+
+
+      // *** Step 1: Skip over any bytes before the next sync word
+
+      SyncWordFound = ReSync ( ptr_to_InputFile, &ExcessBytes, &ExcessNonZeroCnt );
+
+      if ( !SyncWordFound ) {  //  sync word found ?
+
+         printf ( "\n\n Sync Word NOT Found -- EOF?? !!\n" );
+
+      } else {  //  sync word found ?
+
+         if ( ExcessBytes > 0 ) {  //  ExcessBytes > 0 ?
+
+            if ( ExcessNonZeroCnt == 0 ) {  // ExcessNonZeroCnt ?
+
+               printf (                    "\n\n >>> %u EXCESS BYTES BEFORE SYNCH WORD -- all bytes are zero !!!\n", ExcessBytes);
+               fprintf (ptr_to_SummaryFile, "\n\n >>> %u EXCESS BYTES BEFORE SYNCH WORD -- all bytes are zero !!!\n", ExcessBytes);
+
+            } else {  // ExcessNonZeroCnt ?
+
+                printf (
+                  "\n\n >>> %u EXCESS BYTES BEFORE SYNCH WORD -- %u bytes are NON-ZERO !!!\n", ExcessBytes, ExcessNonZeroCnt );
+               fprintf (ptr_to_SummaryFile,
+                  "\n\n >>> %u EXCESS BYTES BEFORE SYNCH WORD -- %u bytes are NON-ZERO !!!\n", ExcessBytes, ExcessNonZeroCnt );
+
+            }  // ExcessNonZeroCnt ?
+
+         }  //  ExcessBytes > 0 ?
+
+
+
+         // *** Step 2: Process the header of the next packet:
+
+         ReadStatus = ReadPacket (
+            ptr_to_InputFile,
+            ptr_to_SummaryFile,
+            true,
+            &DataType,
+            CountByAPID,
+            &PacketDataLength,
+            PacketData,
+            &HeaderCoarseTime,
+            &HeaderFineTime,
+            &SequenceCount );
+
+
+         if ( ReadStatus != OK ) {
+
+            printf ( "\nReadPacket return ERROR !\n" );
+
+         } else {  // ReadStatus ?
+
+
+            //  *** Step 3: Process the packet, depending on its datatype:
+
+            switch ( DataType ) {
+
+               default:
+                   printf ( "\n ***** ERROR: Unrecognized DataType: %d\n\n", DataType );
+                  fprintf ( ptr_to_SummaryFile, "\n ***** ERROR: Unrecognized DataType: %d\n\n", DataType );
+               break;
+
+
+               case CSPEC:
+
+                  ProcessCSPEC ( PacketData, PacketDataLength, ptr_to_SummaryFile );
+
+               break;
+
+
+               case CTIME:
+
+                  ProcessCTIME ( PacketData, PacketDataLength, ptr_to_SummaryFile );
+
+               break;
+
+
+
+               case TTE:
+
+                  ProcessTTE ( (uint32_t *) PacketData,
+                               PacketDataLength,
+                               HeaderCoarseTime,
+                               HeaderFineTime,
+                               SequenceCount,
+                               ptr_to_SummaryFile,
+                               ptr_to_TTE_File );
+
+               break;
+
+            }  // switch on DataTYpe
+
+         }  //  ReadStatus ?
+
+      }  //  sync word found ?
+
+   }   // loop while sync words available
+
+
+   fprintf ( ptr_to_SummaryFile, "\n\nCount of APIDs found:\n\n" );
+   fprintf ( ptr_to_SummaryFile, "APID 0x5A0: CSPEC: %6u\n", CountByAPID [ CSPEC ] );
+   fprintf ( ptr_to_SummaryFile, "APID 0x5A1: CTIME: %6u\n", CountByAPID [ CTIME ] );
+   fprintf ( ptr_to_SummaryFile, "APID 0x5A2:   TTE: %6u\n", CountByAPID [ TTE ] );
+   fprintf ( ptr_to_SummaryFile, "Unexpected values: %6u\n", CountByAPID [ BAD ] );
+
+   printf ( "\n\nCount of APIDs found:\n\n" );
+   printf ( "APID 0x5A0: CSPEC: %6u\n", CountByAPID [ CSPEC ] );
+   printf ( "APID 0x5A1: CTIME: %6u\n", CountByAPID [ CTIME ] );
+   printf ( "APID 0x5A2:   TTE: %6u\n", CountByAPID [ TTE ] );
+   printf ( "Unexpected values: %6u\n", CountByAPID [ BAD] );
+
+
+   return 0;
+
+
+}  //  FileScan ()

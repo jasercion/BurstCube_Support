@@ -1,0 +1,325 @@
+
+
+       Notes / Documentation on Michael Briggs' HSSDB Programs,  2008 June 5--6, 22, July 10
+         Filetypes revised 2014 Feb 16
+
+Rev 2014 Feb 18:
+1) order of output revised.
+2) two new programs to read output files.
+
+
+
+
+
+Written in C.  Originally designed for HSSDB data from the SIIS, in which there is nothing
+except sync words and packets.   But they since re-synch for each packet, they shouldn't
+have any problem with a file that has added additional information, as long as the
+HSSDB packets are not split and the sync words haven't been removed.
+
+Of course the comments in the source code are more detailed.  This document is an overview.
+
+Currently there are Four programs: File Scan, Extract TTE, Merge_TTE and Trigger_from_TTE.
+Extract_TTE and Merge_TTE are used together, in that order.
+Trigger_from_TTE can be used to analyze the data output by Merge_TTE.
+
+
+                      *** *** *** *** *** *** *** *** *** ***
+
+Program A: FileScan.exe
+
+Purpose is to read binary HSSDB data file and to output human-readable summary information about
+each packet.
+
+
+Usage:
+./FileScan.exe  InputFileName.dat
+(Filename must end ".dat")
+
+
+Output files:  Human readable and self-explanatory.   Filetypes .tte  and .inf.
+
+
+
+Main routine is MAIN_FileScan.c
+
+MAIN_FileScan.c calls:
+
+1) ReSync reads through the HSSDB file until it encounters the 4-byte sync word 0x352EF853,
+or EOF or other error condition.   Success is finding the synch word, which means that the
+next bytes are a HSSDB data packet.
+
+2) ReadPacket: ReSync has positioned the "read pointer" just ahead of the bytes of an HSSDB
+packet.  ReadPacket reads those bytes, both the packet header and all of the data.
+It identifies the packet type, CSPEC, CTIME or TTE, and calculates and returns the Header Time.
+ReadPacket does not do any processing of the actual detector data; it even leaves the
+endian-ness of the data unaltered.   (CSPEC and CTIME are little endian, TTE is big endian.)
+ReadPacket tests, by data type, for skipped sequence numbers.
+
+Depending on "verbose flag", outputs varying amounts of summary information obtained from
+the packet header.    By differencing the header times, it outputs the deduced
+accumulation times of the packets.
+
+      >> calls ByteSwap
+      >> calls FloatTime_from_CoarseFine
+           which converts the two integers of GBM MET time to a floating point
+           value -- seconds since the GLAST Epoch.
+
+
+Depending on the datatype of the packet, as identified by ReadPacket, MAIN_FileScan calls
+one of the following three routines:
+
+3) ProcessCSPEC: receives data as read by ReadPacket.   Outputs human readable summary:
+simply the sum of the counts for each detector.
+
+4) ProcessCTIME: receives data as read by ReadPacket.   Outputs human readable summary:
+the 8-channel spectrum of detector 0 and the sum of the counts for each detector.
+
+5) ProcessTTE:
+
+Receives data as read by ReadPacket.
+While subroutine ProcessTTE also outputs summary information, it is much more complicated
+than the other two "Process" subroutines.
+
+This subroutine is currently OBSOLETE for two reasons:
+
+  a) It is overly complicated for most purposes:
+  This subroutine attempts to identify the time range of the data words of each
+  TTE packet.  This is much more complicated than just merging all TTE data
+  of a "chunk" together and calculating the time of each data word.   TTE is
+  much easier to process, if unlike this subroutine, you don't try to understand
+  it at the packet level and instead just merge it into a stream.  The only reason
+  to look at packets is to recognize when you have a different TTE "chunk", e.g.,
+  switching from prompt TTE in a trigger to the pre-trigger FIFO readout.
+
+  b) It does NOT correct the timing errors made by the FPGAs.
+
+      >> calls ByteSwap -- TTE data needs to be converted from bid-endian
+      >> calls FloatTime_from_CoarseFine -- see above
+      >> calls Time_from_TTE_Data
+
+ProcessTTE outputs human readable summary information to two files.
+
+Summary information to one file, such as the number of Coarse Time
+and Data Words in the Packet, and the times of the first and last Data Words in the Packet.
+
+To a different file, each TTE Data Word.
+
+
+                      *** *** *** *** *** *** *** *** *** ***
+
+Program B: Extract_TTE.exe
+
+Output files: .txt and .sum, up to 14 files .TTE_Det_xx.dat
+
+
+What this program does:
+
+i) This program reads the HSSDB data and extracts the TTE data, writing the TTE events
+to files, one file for each detector for which TTE data is encountered.
+The output data is simpler and cleaner: there are only TTE events, rather than a mixture
+of data words (events) and time words.   Also, time errors are corrected.
+
+The TTE events are output to separate files by detector because this fixes a problem with the time
+ordering of the events.   The problem: in the original file, data words may be slightly out of
+order, but only when comparing data events from different detectors -- events from any particular
+detector are always in time order -- this is because of the round-robin method by which
+the DPU FPGA reads the data from the detectors.   For example, the FPGA may be reading detector
+10 while events are waiting at detectors 1, 3 and 4.   Suppose that before the FPGA has finished
+reading all of the events at detectors 1, 3 and 4 (which it will do in that order), events appear
+for detectors 9 and 7 -- in that time order.   The FPGA will read the event at detector 7 first,
+even though it is later in time than the event of detector 9.
+
+So separating the events into different
+files by detector eliminates the problem of there not being in time order, but creates
+a burden on any reader that wants events from more than one detector -- that software
+will have to merge events from multiple files -- but see Merge_TTE for a program that
+merges the TTE back into one file.
+
+ii) Time errors are corrected.   See the comments in Extract_TTE_1packet or the memo
+FPGA_memo.txt, by Michael Briggs, with contributions from Narayana Bhat, 2005 January 17;
+
+iii) The program looks for errors and anomalies, such as unexpectedly large time jumps.
+If an anomaly is found, it outputs to a different file, in human readable format, the
+TTE events before and after the anomaly.  This allows human analysis to decide whether
+there truly is an anomaly.
+
+Without features i) and ii), the program would be much simpler.
+
+
+Usage:
+./Extract_TTE.exe  InputFileName.dat
+
+Output files and formats formats:
+
+1) binary files with TTE data: one file per detector.
+There is no need to output the detector number since each file contains a single detector --
+the filename has the detector number.
+The output is binary / unformatted, using the C fwrite statement.
+
+Output per each event:
+   32 bit unsigned integer CoarseTime,
+   16 bit unsigned integer FineTime,
+   16 bit unsigned integer SpecChannel.
+
+
+2) Human readable summary files with names InputFileName.txt and .sum
+
+The .sum file is also used as input to Merge_TTE (if you run that in order to know what
+detector files to read.
+
+3) Human readable .err file with information about potential anomalies in the data.
+
+
+LIMITATION: Currently the same filenames are always used for the detector files and the
+summary file.   So you need if you have multiple TTE datasets, you either have to place them
+in separate directories, or rename the output files so that they don't clobber each other.
+
+
+Main routine: MAIN_Extract_TTE.c
+
+MAIN_Extract_TTE.c calls:
+
+1) ReSync -- see above
+
+2) ReadPacket -- see above
+
+   >> calls FloatTime_from_CoarseFine -- see above
+
+
+For each TTE packet found by ReadPacket, MAIN_Extract_TTE calls:
+
+3) Extract_TTE_1packet
+
+*** Deficiencies / Possible deficiencies:
+a) data words before the first time word are skipped.
+b) The program assumes that the TTE is contiguous.   I can not handle the jump backwards
+of the FIFO dump of trigger data.
+c) are all cases and combination of time errors correctly handled?
+
+   This routine returns the TTE data of the input packet to the calling routine.
+   The data is "cleaned" and simplified.   A simplification is instead of having a mixture
+   of TTE Time Words and TTE Data Words with only the fine time, the output of the routine
+   is the full / simple parameters for each TTE Event: GBM Coarse Time, GBM Fine Time,
+   (energy) Channel and Detector.
+
+   Furthermore time is cleaned by correcting for the FPGA timing errors: the jumps forward and
+   back by 0.1 s, and the omission of the TTE time word.
+
+   This routine checks for bad data and suspicious data patterns ("anomalies") and
+   outputs error and warning messages.
+
+      >> calls ByteSwap_4 -- TTE data needs to be converted from bid-endian
+      >> calls FloatTime_from_CoarseFine
+         see above.
+
+4) Output_TTE
+
+   MAIN_Extract_TTE passes to Output_TTE the TTE events extracted from each packet by
+   Extract_TTE_1packet.  Output_TTE writes the TTE events out to files, one file per
+   detector.   It only opens an output file for a particular detector if it receives
+   data for that detector.   The output is binary / unformatted, using the C fwrite
+   statement.
+
+   See the start of the description of the program for the format of the output file.
+
+   There is an important reason for writing the data to separate files by detector.
+   Since the data is read in a round-robin fashion by the FPGA on the GBM DPU,
+   TTE events from different detectors may not be in time order.  This problem is explained
+   above -- it only occurs when between events from different detectors -- so a first step
+   in fixing the problem is to separate the common TTE data stream into separate streams,
+   one for each detector.
+
+   >> calls IntegerTime_from_CoarseFine
+         which converts the two integers of GBM MET time into a single integer value --
+         this integer has units of 2 microseconds and the same zero point as MET Time,
+         i.e., the GLAST Epoch of midnight 2001 Jan 1.    Counting time in 2 microsecond
+         units over a long time period is possible by using a "64 bit unsigned integer" --
+         the advantage is avoiding rounding issues when doing time calculations.
+
+
+When there are no more packets, MAIN_Extract_TTE calls Output_TTE one more time,
+with a special argument value, to cause Output_TTE to perform closeout actions --
+outputting summary information.
+
+
+
+                      *** *** *** *** *** *** *** *** *** ***
+
+Program C: Merge_TTE.exe
+
+????  This section of the document: WORK ON PROGRESS.
+
+Usage: ./Merge_TTE.exe   InputFileName.sum
+
+Input is read from human readable file FileName.sum and
+binary files with detector data TTE_Data_Det_??.dat, as listed in the summary file.
+LIMITATION: the same file names are always used.
+
+
+Purpose: reads the separate (binary) TTE data files, one for each detector, that are
+output by Extract_TTE.exe and outputs the data into a single file containing all
+of the detectors present in the dataset.   The data is merged to be in time order.
+If two detectors have an event with the same time, the event from the smaller detector
+number will be first in the file.
+
+
+Output files and formats:
+
+Output filename: Processed_TTE.dat
+
+Binary output file with merged TTE events:
+
+Output for each TTE event:
+   32 bit unsigned integer CoarseTime,
+   16 bit unsigned integer FineTime,
+   // NO: uint64_t  Time_in_OneVariable;
+   16 bit unsigned integer  Detector;
+   16 bit unsigned integer  SpecChannel;
+
+
+Using a 64 bit unsigned integer for the TTE time allows merging the GBM time
+into a single integer variable.   Full 2 microsec precision is retained
+over the entire 13.6 year span of the GBM clock.   Using an integer variable rather
+than floating point ensures that there will be no problems with rounding.
+
+
+
+Main file is MAIN_Merge_TTE.c
+which contains the main routine "main" (really MAIN_Merge_TTE)
+and subroutines ReadSummaryFile, Load_Detector_Buffer and SkipLines_v2
+
+also calls subroutine IntegerTime_from_CoarseFine.c
+
+
+
+                      *** *** *** *** *** *** *** *** *** ***
+
+Program D:  Trigger_from_TTE.exe
+
+
+
+
+                      *** *** *** *** *** *** *** *** *** ***
+
+
+Program E:   Read_TTE_1det.exe
+
+compile:
+gcc Read_TTE_1det.c -o Read_TTE_1det.exe
+
+Run on output of Extract_TTE.exe:
+./Read_TTE_1det.exe filename
+output is to screen
+
+                      *** *** *** *** *** *** *** *** *** ***
+
+Program F:  Read_Processed.exe
+
+compile:
+gcc Read_Processed.c -o Read_Processed.exe
+
+Run on output of Merge_TTE.exe:
+./Read_Processed.exe
+output is to screen
+
+
